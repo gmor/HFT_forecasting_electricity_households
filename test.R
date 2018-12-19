@@ -4,10 +4,12 @@ library(padr)
 library(zoo)
 library(lubridate)
 library(xgboost)
-library(Ckmeans.1d.dp)
+library(jsonlite)
 source("clustering.R")
 source("meteo.R")
+source("utils.R")
 
+params <- fromJSON("config.json")
 df <- fread("data/Minute_Haus_12_Export_Summer18_12cpGesamt@EnViSaGe-router00012.csv", data.table = F)
 tz <- "Europe/Berlin"
 colnames(df)<- c("t","v")
@@ -20,6 +22,12 @@ df$v <- na.locf(na.locf(df$v), fromLast = TRUE)
 df$h <- hour(with_tz(df$t,tz="Europe/Berlin"))
 df$d <- as.Date(df$t,tz = "Europe/Berlin")
 
+# Detect days with no usage
+df <- detect_days_with_no_usage(df,value_column = "v",time_column = "d",plot_density = T,tz="Europe/Berlin")
+
+# Detect the outliers
+df <- detect_outliers_znorm(df, znorm_threshold=20, rolling_width = 25)
+
 # Smoothing the hourly consumption (Moving average from t-2 to t+2).
 df$vs <- rollmean(x= df$v, k=5, align = "center",fill = c(NA,NA,NA))
 
@@ -29,9 +37,11 @@ ggplot(df) + geom_line(aes(h,v,group=d),alpha=0.3) + theme_bw()
 ggplot(df) + geom_line(aes(h,vs,group=d),alpha=0.3) + theme_bw()
 
 # Clustering the daily load curves.
-cl <- GaussianMixtureModel_clustering(df,time_column = "t",value_column = "vs",k = 2:20,tz = "UTC",plot_file = "results_clustering.pdf")
+cl <- GaussianMixtureModel_clustering(df[df$out==F & df$nouse==F,],time_column = "t",value_column = "vs",k = 2:20,tz = "UTC",plot_file = "results_clustering.pdf", 
+                                      latex_font= params$latex_font)
 cl_days <- cl$df[!duplicated(cl$df[,"day"]),c("day","s")]
 colnames(cl_days)=c("d","s")
+cl_days[is.na(cl_days$s),"s"] <- "NA"
 
 # Generate the daily consumption description dataframe
 df_pr <- do.call(rbind,lapply(FUN=function(day){
@@ -53,15 +63,20 @@ df_pr <- do.call(rbind,lapply(FUN=function(day){
     )
 },X = unique(df$d)))
 rownames(df_pr) <- NULL
+
 # Add the clustering results
 df_pr <- merge(df_pr,cl_days,by = "d")
 
 # Obtain the weather conditions for the location
-weather <- get_weather(ts_from=paste0(min(df$d)," 00:00:00"),
-                       ts_to=paste0(max(df$d)," 23:59:59"),
-                       tz=tz,
-                       lat = 49.08,
-                       lon = 9.46)
+weather <- get_weather(
+  api_key = params$api_darksky,
+  CAMS_registered_emails = params$api_cams,
+  venv_path = params$venv_path,
+  ts_from=paste0(min(df$d)," 00:00:00"),
+  ts_to=paste0(max(df$d)," 23:59:59"),
+  tz=tz,
+  lat = 49.08,
+  lon = 9.46)
 weather$time <- with_tz(weather$time, tz=tz)
 
 # Daily weather data
@@ -78,17 +93,45 @@ df_pr_w <- data.frame(
 # Create the final dataframe to train the decision tree
 df_pr <- merge(df_pr,df_pr_w,stringsAsFactors=F)
 df_pr <- lagged_df(df=df_pr, lags=1:7, exception=c("d","weekend","weekday","month"))
-df_pr <- df_pr[, grepl("_l",colnames(df_pr)) | (colnames(df_pr) %in% c("d","s"))]
+df_pr <- df_pr[, grepl("lag",colnames(df_pr)) | (colnames(df_pr) %in% c("d","s"))]
 df_pr <- df_pr[complete.cases(df_pr),]
 
-# 
-y<-"s"
-x<-setdiff(names(df_pr),c(y,"d"))
-x_data = model.matrix(as.formula(paste0(y,"~0+",paste(x,collapse="+"))),df_pr)
+# Define X (Input of the model)
+X<-df_pr
 
-# Training and validation period
-tr <- sample(1:nrow(x_data),nrow(x_data)*0.9,replace = F)
-vl <- (1:nrow(x_data))[!((1:nrow(x_data)) %in% tr)]
+# Calculate the XGBoost model
+mod <- xgboost_framework(X,plots = T)
+
+
+features <- colnames(x_v)
+pred <- as.data.frame(predict(mod, newdata = x_v ))$response
+
+prediction0<-matrix(predict(mod,x_v),
+                    ncol=length(unique(X$s)), byrow=T)
+colnames(prediction0)<-c(sprintf("p%02i",1:ncol(prediction0)))
+prediction_v <- df_pr$s[vl]
+prediction <- round(prediction0*100,2)
+prediction <- as.data.frame(prediction[,sort(colnames(prediction))],stringsAsFactors=F)
+prediction$position <- mapply(function(x){which(order(prediction[x,],decreasing = T) %in% as.numeric(as.character(y_labels_v[x]+1)))},1:nrow(x_data_v))
+
+plot_day_ahead_load_curve_prediction(df_to_predict = df_pr, 
+                                     prediction = prediction,
+                                     prediction_v = mapply(function(x){which.max(prediction[x,])},1:nrow(prediction)),
+                                     model="XGBoost",classification = NULL, validation=vl)
+
+
+
+
+
+
+
+
+
+
+
+
+# 
+x_data = model.matrix(as.formula(paste0(y,"~0+",paste(x,collapse="+"))),df_pr)
 
 x_data_t <- x_data[tr,]
 x_data_v <- x_data[vl,]
@@ -101,14 +144,17 @@ y_labels_v <- y_labels[vl]
 
 dtrain <- xgb.DMatrix(data = x_data_t, label = y_labels_t)
 colnames(dtrain)
+
+
 mod <- xgboost(data = dtrain, 
                max.depth = 7, eta = 0.03, nthread =8, 
                nrounds=400, min_child_weight = 1, gamma=0,
                colsample_bytree = 0.5,
                objective = "multi:softprob",
-               "eval_metric" = "mlogloss",
+               eval_metric = "mlogloss",
                #scale_pos_weight = 1,
                num_class=length(unique(df_pr$s)))
+
 xgboost::xgb.ggplot.importance(
   xgb.importance(feature_names =colnames(dtrain),
                  model = mod),top_n = 25

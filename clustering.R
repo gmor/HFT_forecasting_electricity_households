@@ -55,7 +55,7 @@ normalize_znorm <- function(df, spec_mean_sd=NULL){
   }
 }
 
-GaussianMixtureModel_clustering<-function(df,time_column="t",value_column="v",k=NULL,title="",tz="UTC",plot_file=NULL){
+GaussianMixtureModel_clustering<-function(df,time_column="t",value_column="v",k=NULL,title="",tz="UTC",plot_file=NULL, latex_font=F){
   df_agg<-aggregate(as.numeric(df[,value_column]),by=list(
     strftime(strptime(df[,time_column],format="%Y-%m-%d %H:%M:%S",tz=tz),format = "%Y-%m-%d %H",tz=tz)),
     FUN=sum)
@@ -128,38 +128,58 @@ GaussianMixtureModel_clustering<-function(df,time_column="t",value_column="v",k=
   # Plot
   if (!is.null(plot_file)){
     print(paste0("Clustering results saved in: ",plot_file))
-    library(extrafont)
-    #first download the fonts and unzip them  https://www.fontsquirrel.com/fonts/download/computer-modern
-    #extrafont::font_import(pattern = "cmun*",paths = "/usr/share/fonts",recursive = T,prompt = F)
-    loadfonts(quiet = T)
-    pdf(plot_file,height = 6.5,width = 6.5)
-    # print(ggplot(df_distances)+geom_histogram(aes(distance),binwidth=0.3)+
-    #         xlim(c(min(df_distances$distance,na.rm=T),max(df_distances$distance,na.rm=T)))+
-    #         facet_wrap(~k,nrow=2)+theme_bw() + theme(text= element_text(size=20, family="CM Roman")))
-    # print(ggplot(df_distances[!is.na(df_distances$k_new),])+geom_histogram(aes(distance),binwidth=0.3)+
-    #         xlim(c(min(df_distances$distance,na.rm=T),max(df_distances$distance,na.rm=T)))+
-    #         facet_wrap(~k_new,nrow=2)+theme_bw() + theme(text= element_text(size=20, family="CM Roman")))
-    print(ggplot(df_structural)+geom_line(aes(time,value,col=as.character(s),group=1))+
-            theme_bw()+theme(legend.position="bottom",axis.text=element_text(size=20),
-                             axis.title=element_text(size=20))+
-            labs(x="time", y="Hourly consumption [kWh]")+
-            theme(text= element_text(size=20, family="CM Roman")) + labs(col="Seasonality: "))
-    print(ggplot(df_structural)+#[!is.na(df_structural$s),])+
-            geom_line(aes(x=as.numeric(substr(dayhour,1,2)),y=as.numeric(value),group=as.factor(day)),alpha=0.2)+
-            geom_line(data=df_centroids,aes(x=as.numeric(substr(dayhour,1,2)),y=as.numeric(value)),size=0.5,col='red')+
-            facet_wrap(~s,nrow=2)+ #,nrow=length(levels(as.factor(df_structural$s)))
-            theme_bw()+theme(legend.position="none",axis.text=element_text(size=20),
-                             axis.title=element_text(size=20))+labs(x="Hour of the day", y="Hourly consumption (kWh)") +
-            theme(text= element_text(size=20, family="CM Roman")))
-    bic_df <- data.frame(k,BIC=mclust_results$BIC[,])
-    if (!("BIC" %in% colnames(bic_df))){ bic_df$BIC <- bic_df[,paste0("BIC.",mclust_results$modelName)] }
-    print(ggplot(bic_df)+
-            geom_line(aes(k,BIC)) + geom_point(aes(k,BIC)) +
-            geom_point(aes(k,BIC), col=2, cex=4, data=bic_df[which.max(bic_df$BIC),])+
-            theme_bw() + theme(text= element_text(size=30, family="CM Roman")))
-    dev.off()
+    if(latex_font==T){
+        library(extrafont)
+        #first download the fonts and unzip them  https://www.fontsquirrel.com/fonts/download/computer-modern
+        #extrafont::font_import(pattern = "cmun*",paths = "/usr/share/fonts",recursive = T,prompt = F)
+        loadfonts(quiet = T)
+        
+        pdf(plot_file,height = 6.5,width = 6.5)
+        print(ggplot(df_structural)+geom_line(aes(time,value,col=as.character(s),group=1))+
+                theme_bw()+theme(legend.position="bottom",axis.text=element_text(size=16),
+                                 axis.title=element_text(size=16))+
+                labs(x="time", y="Hourly consumption [kWh]")+
+                theme(text= element_text(size=20, family="CM Roman")) +
+                labs(col="Seasonality: "))
+        print(ggplot(df_structural)+
+                geom_line(aes(x=as.numeric(substr(dayhour,1,2)),y=as.numeric(value),group=as.factor(day)),alpha=0.2)+
+                geom_line(data=df_centroids,aes(x=as.numeric(substr(dayhour,1,2)),y=as.numeric(value)),size=0.5,col='red')+
+                facet_wrap(~s,nrow=2)+
+                theme_bw()+theme(legend.position="none",axis.text=element_text(size=16),
+                                 axis.title=element_text(size=16))+labs(x="Hour of the day", y="Hourly consumption (kWh)") +
+                theme(text= element_text(size=20, family="CM Roman")))
+        bic_df <- data.frame(k,BIC=mclust_results$BIC[,])
+        if (!("BIC" %in% colnames(bic_df))){ bic_df$BIC <- bic_df[,paste0("BIC.",mclust_results$modelName)] }
+        print(ggplot(bic_df)+
+                geom_line(aes(k,BIC)) + geom_point(aes(k,BIC)) +
+                geom_point(aes(k,BIC), col=2, cex=4, data=bic_df[which.max(bic_df$BIC),])+
+                theme_bw() + theme(text= element_text(size=30, family="CM Roman")))
+        dev.off()
+        embed_fonts(file = plot_file, outfile=plot_file)
+      } else {
+        pdf(plot_file,height = 6.5,width = 6.5)
+        print(ggplot(df_structural)+geom_line(aes(time,value,col=as.character(s),group=1))+
+                theme_bw()+theme(legend.position="bottom",axis.text=element_text(size=16),
+                                 axis.title=element_text(size=16))+
+                labs(x="time", y="Hourly consumption [kWh]")+
+                theme(text= element_text(size=16)) +
+                labs(col="Seasonality: "))
+        print(ggplot(df_structural)+
+                geom_line(aes(x=as.numeric(substr(dayhour,1,2)),y=as.numeric(value),group=as.factor(day)),alpha=0.2)+
+                geom_line(data=df_centroids,aes(x=as.numeric(substr(dayhour,1,2)),y=as.numeric(value)),size=0.5,col='red')+
+                facet_wrap(~s,nrow=2)+
+                theme_bw()+theme(legend.position="none",axis.text=element_text(size=16),
+                                 axis.title=element_text(size=16))+labs(x="Hour of the day", y="Hourly consumption (kWh)") +
+                theme(text= element_text(size=16)))
+        bic_df <- data.frame(k,BIC=mclust_results$BIC[,])
+        if (!("BIC" %in% colnames(bic_df))){ bic_df$BIC <- bic_df[,paste0("BIC.",mclust_results$modelName)] }
+        print(ggplot(bic_df)+
+                geom_line(aes(k,BIC)) + geom_point(aes(k,BIC)) +
+                geom_point(aes(k,BIC), col=2, cex=4, data=bic_df[which.max(bic_df$BIC),])+
+                theme_bw() + theme(text= element_text(size=20)))
+        dev.off()
+      }
   }
-  embed_fonts(file = plot_file, outfile=plot_file)
   return(list("df"=df_structural,"mod"=mclust_results))
 }
 

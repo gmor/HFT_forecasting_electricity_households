@@ -19,14 +19,12 @@ degrees.to.radians<-function(degrees=45,minutes=30){
 }
 
 # Get real historical weather data
-get_weather <- function(ts_from, ts_to, lat, lon, tz="UTC"){
-  api_key = "861fe2c5c052c028a60a834ab6ab324d"
-  CAMS_registered_mails = c("gerardmor@gmail.com","gmor@cimne.upc.edu","fbgerardmor@gmail.com","gmor@macs.udl.cat")
-  use_virtualenv("/home/gerard/.virtualenvs/beeMeteo/")
+get_weather <- function(api_key, CAMS_registered_emails, venv_path, ts_from, ts_to, lat, lon, tz="UTC"){
+  use_virtualenv(venv_path)
   bee_meteo <- reticulate::import("bee_meteo")
   wdf <- bee_meteo$historical_weather(
     api_key=api_key,
-    cams_registered_mails=CAMS_registered_mails,
+    cams_registered_mails=CAMS_registered_emails,
     lat=lat,
     lon=lon,
     ts_from=ts_from,
