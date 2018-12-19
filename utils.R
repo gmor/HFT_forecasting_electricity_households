@@ -2,6 +2,7 @@
 library(gridExtra)
 library(grid)
 library(gtable)
+library(dplyr)
 
 lagged_df<- function(df,lags,exception){	
   if (is.null(exception)){	
@@ -11,7 +12,7 @@ lagged_df<- function(df,lags,exception){
   }	
   for (col in columns){	
     for (lagK in lags){	
-      df <- data.frame(df,lag(df[,col],lagK))	
+      df <- data.frame(df,dplyr::lag(df[,col],lagK))	
       colnames(df)[ncol(df)] <- paste0(col,"_l",lagK)	
     }	
   }	
@@ -69,3 +70,4 @@ plot_day_ahead_load_curve_prediction <- function(df_to_predict, prediction, pred
   }
   
 }
+

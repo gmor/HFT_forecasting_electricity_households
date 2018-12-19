@@ -5,8 +5,10 @@ library(zoo)
 library(lubridate)
 library(xgboost)
 library(Ckmeans.1d.dp)
+library(oce)
 source("clustering.R")
 source("meteo.R")
+source("utils.R")
 
 df <- fread("data/Minute_Haus_12_Export_Summer18_12cpGesamt@EnViSaGe-router00012.csv", data.table = F)
 tz <- "Europe/Berlin"
@@ -31,6 +33,7 @@ ggplot(df) + geom_line(aes(h,vs,group=d),alpha=0.3) + theme_bw()
 # Clustering the daily load curves.
 cl <- GaussianMixtureModel_clustering(df,time_column = "t",value_column = "vs",k = 2:20,tz = "UTC",plot_file = "results_clustering.pdf")
 cl_days <- cl$df[!duplicated(cl$df[,"day"]),c("day","s")]
+cl_days$s <- ifelse(is.na(cl_days$s),"NA",cl_days$s)
 colnames(cl_days)=c("d","s")
 
 # Generate the daily consumption description dataframe
@@ -57,19 +60,24 @@ rownames(df_pr) <- NULL
 df_pr <- merge(df_pr,cl_days,by = "d")
 
 # Obtain the weather conditions for the location
-weather <- get_weather(ts_from=paste0(min(df$d)," 00:00:00"),
-                       ts_to=paste0(max(df$d)," 23:59:59"),
-                       tz=tz,
-                       lat = 49.08,
-                       lon = 9.46)
-weather$time <- with_tz(weather$time, tz=tz)
+# weather <- get_weather(ts_from=paste0(min(df$d)," 00:00:00"),
+#                        ts_to=paste0(max(df$d)," 23:59:59"),
+#                        tz=tz,
+#                        lat = 49.08,
+#                        lon = 9.46)
+weather <- fread("meteo_data/49.08_9.46_hist_hourly.csv",data.table = F)
+weather$time <- with_tz(as.POSIXct(substr(weather$time,1,19),tz="UTC",
+                                   format="%Y-%m-%d %H:%M:%S"), tz=tz)
+sun_df<-as.data.frame(do.call(cbind,sunAngle(t=weather$time,latitude = 49.08,longitude = 9.46,useRefraction = T)))
+sun_df$altitude <- ifelse(sun_df$altitude<0,0,sun_df$altitude)
+weather$sunElev <- sun_df$altitude
+weather$sunAzimuth <- ifelse(sun_df$altitude>0,sun_df$azimuth,0)
 
 # Daily weather data
 df_pr_w <- data.frame(
   "d"= aggregate(weather$temperature,by=list(as.Date(weather$time,tz=tz)),FUN=mean)$Group.1,
   "temp"= aggregate(weather$temperature,by=list("day"=as.Date(weather$time,tz=tz)),FUN=mean)$x,
   "wind"= aggregate(weather$windSpeed,by=list(as.Date(weather$time,tz=tz)),FUN=mean)$x,
-  "windDir"= aggregate(weather$windDirection,by=list(as.Date(weather$time,tz=tz)),FUN=mean)$x,
   "GHI"= aggregate(weather$GHI,by=list(as.Date(weather$time,tz=tz)),FUN=sum)$x,
   "sunElev"= aggregate(weather$sunElev,by=list(as.Date(weather$time,tz=tz)),FUN=max)$x,
   stringsAsFactors=F
@@ -80,6 +88,10 @@ df_pr <- merge(df_pr,df_pr_w,stringsAsFactors=F)
 df_pr <- lagged_df(df=df_pr, lags=1:7, exception=c("d","weekend","weekday","month"))
 df_pr <- df_pr[, grepl("_l",colnames(df_pr)) | (colnames(df_pr) %in% c("d","s"))]
 df_pr <- df_pr[complete.cases(df_pr),]
+
+
+
+
 
 # 
 y<-"s"
