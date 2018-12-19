@@ -1,0 +1,6 @@
+{
+  "api_darksky": "861fe2c5c052c028a60a834ab6ab324d",
+  "api_cams": ["gerardmor@gmail.com","gmor@cimne.upc.edu"],
+  "venv_path": "/home/gerard/.virtualenvs/beeMeteo/",
+  "latex_font": false
+}
