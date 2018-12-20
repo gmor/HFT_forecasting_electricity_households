@@ -30,7 +30,7 @@ plot_day_ahead_load_curve_prediction <- function(df_to_predict, prediction, pred
     l <- table$layout	
     which(l$t==row & l$l==col & l$name==name)	
   }	
-  for (i in 1:nrow(prediction)){	
+  for (i in 1:nrow(prediction)){
     assign(paste0("real",i),find_cell(g, i+1, as.numeric(as.character(df_to_predict[validation,"s"][i]))+1,name="core-bg"))	
     assign(paste0("est",i),find_cell(g, i+1, as.numeric(as.character(prediction_v))[i]+1,name="core-fg"))	
     g$grobs[get(paste0("real",i))][[1]][["gp"]] <- gpar(fill="darkolivegreen1", col = "darkolivegreen4", lwd=5)	
@@ -39,7 +39,7 @@ plot_day_ahead_load_curve_prediction <- function(df_to_predict, prediction, pred
   
   # Add a title to the table	
   title <- textGrob(	
-    paste0(model," - Avg/Median probability of real day-ahead profile: ",	
+    paste0(model,"\nAvg/Median probability of real day-ahead profile: ",	
            round(mean(mapply(function(x){	
              prediction[x,as.numeric(as.character(df_to_predict[validation,"s"][x]))]	
            },1:length(validation))),2),"%/",	
@@ -108,17 +108,18 @@ xgboost_framework <- function (X, plots=F){
   lrn$par.vals <- list( objective=param$objective, booster=param$booster, eval_metric=param$eval_metric,
                         subsample=param$subsample, colsample_bytree = param$colsample_bytree,
                         nrounds=param$nrounds, verbose=0)
-  params <- makeParamSet( makeIntegerParam("max_depth",lower = 2L,upper = 8L), 
-                          makeIntegerParam("min_child_weight",lower = 2L,upper = 20L),
-                          makeIntegerParam("nrounds",lower = 20L,upper = 400L),
-                          makeNumericParam("gamma",lower = 0,upper = 0.5),
+  params <- makeParamSet( makeIntegerParam("max_depth",lower = 2L,upper = 5L), 
+                          makeIntegerParam("min_child_weight",lower = 2L,upper = 10L),
+                          makeIntegerParam("nrounds",lower = 50L,upper = 100L),
+                          makeNumericParam("gamma",lower = 0.5,upper = 5),
                           makeNumericParam("colsample_bytree",lower = 0.5,upper = 1),
-                          makeNumericParam("subsample",lower = 0.5,upper = 1),
-                          makeNumericParam("lambda",lower = 0,upper = 0.4),
-                          makeNumericParam("alpha",lower = 0.7,upper = 1),
-                          makeNumericParam("eta",lower = 0.01,upper = 0.3) )
+                          makeNumericParam("subsample",lower = 0.5,upper = 1)
+                          #makeNumericParam("lambda",lower = 0,upper = 0.4),
+                          #makeNumericParam("alpha",lower = 0.7,upper = 1),
+                          #makeNumericParam("eta",lower = 0.01,upper = 0.3) 
+                          )
   rdesc <- makeResampleDesc("CV",iters=5L)
-  ctrl <- makeTuneControlRandom(maxit = 8L)
+  ctrl <- makeTuneControlRandom(maxit = 96L)
   if (.Platform$OS.type=="windows") parallelStartSocket(parallel::detectCores())
   mytune <- tuneParams(learner = lrn, task = traintask, resampling = rdesc, measures = logloss, 
                        par.set = params, control = ctrl, show.info = F)

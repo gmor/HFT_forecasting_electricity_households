@@ -4,7 +4,6 @@ library(padr)
 library(zoo)
 library(lubridate)
 library(xgboost)
-library(Ckmeans.1d.dp)
 library(oce)
 library(jsonlite)
 library (parallelMap)
@@ -29,7 +28,7 @@ df$d <- as.Date(df$t,tz = "Europe/Berlin")
 df <- detect_days_with_no_usage(df,value_column = "v",time_column = "d",plot_density = T,tz="Europe/Berlin")
 
 # Detect the outliers
-df <- detect_outliers_znorm(df, znorm_threshold=20, rolling_width = 25)
+df <- detect_outliers_znorm(df, znorm_threshold=50, rolling_width = 25)
 
 # Smoothing the hourly consumption (Moving average from t-2 to t+2).
 df$vs <- rollmean(x= df$v, k=5, align = "center",fill = c(NA,NA,NA))
@@ -72,18 +71,24 @@ rownames(df_pr) <- NULL
 df_pr <- merge(df_pr,cl_days,by = "d")
 
 # Obtain the weather conditions for the location
-# weather <- get_weather(ts_from=paste0(min(df$d)," 00:00:00"),
-#                        ts_to=paste0(max(df$d)," 23:59:59"),
-#                        tz=tz,
-#                        lat = 49.08,
-#                        lon = 9.46)
-weather <- fread("meteo_data/49.08_9.46_hist_hourly.csv",data.table = F)
-weather$time <- with_tz(as.POSIXct(substr(weather$time,1,19),tz="UTC",
-                                   format="%Y-%m-%d %H:%M:%S"), tz=tz)
-sun_df<-as.data.frame(do.call(cbind,sunAngle(t=weather$time,latitude = 49.08,longitude = 9.46,useRefraction = T)))
-sun_df$altitude <- ifelse(sun_df$altitude<0,0,sun_df$altitude)
-weather$sunElev <- sun_df$altitude
-weather$sunAzimuth <- ifelse(sun_df$altitude>0,sun_df$azimuth,0)
+if(.Platform$OS.type=="unix") {
+  weather <- get_weather(api_key = params$api_darksky,
+                         CAMS_registered_emails = params$api_cams,
+                         venv_path = params$venv_path,
+                         ts_from=paste0(min(df$d)," 00:00:00"),
+                         ts_to=paste0(max(df$d)," 23:59:59"),
+                         tz=tz,
+                         lat = 49.08,
+                         lon = 9.46)
+} else {
+  weather <- fread("meteo_data/49.08_9.46_hist_hourly.csv",data.table = F)
+  weather$time <- with_tz(as.POSIXct(substr(weather$time,1,19),tz="UTC",
+                                     format="%Y-%m-%d %H:%M:%S"), tz=tz)
+  sun_df<-as.data.frame(do.call(cbind,sunAngle(t=weather$time,latitude = 49.08,longitude = 9.46,useRefraction = T)))
+  sun_df$altitude <- ifelse(sun_df$altitude<0,0,sun_df$altitude)
+  weather$sunElev <- sun_df$altitude
+  weather$sunAzimuth <- ifelse(sun_df$altitude>0,sun_df$azimuth,0)
+}
 
 # Daily weather data
 df_pr_w <- data.frame(
@@ -103,7 +108,6 @@ df_pr <- df_pr[complete.cases(df_pr),]
 
 # Define X (Input of the model)
 X<-df_pr
-
 ggsave("describeX.pdf",ggplot(reshape2::melt(X,c("d","s"))) + geom_boxplot(aes(s, as.numeric(value))) + 
          facet_wrap(~variable,ncol=7,scales="free_y"),
        width = 16, height = 12)
@@ -117,69 +121,17 @@ results$params
 features <- colnames(results$X$vl)
 prediction <- predict(mod, newdata = as.data.frame(results$X$vl))
 
-prediction0<-matrix(prediction,
-                    ncol=length(unique(X$s)), byrow=T)
+prediction0<-apply(matrix(unlist(prediction)[2:(length(unique(results$y$tr))*nrow(results$X$vl)+1)],
+                    ncol=length(unique(results$y$tr)), byrow=F),1:2,as.numeric)
 colnames(prediction0)<-c(sprintf("p%02i",1:ncol(prediction0)))
-prediction_v <- df_pr$s[vl]
+prediction_v <- results$X$vl
 prediction <- round(prediction0*100,2)
 prediction <- as.data.frame(prediction[,sort(colnames(prediction))],stringsAsFactors=F)
-prediction$position <- mapply(function(x){which(order(prediction[x,],decreasing = T) %in% as.numeric(as.character(s_v[x]+1)))},1:nrow(x_data_v))
+prediction$position <- mapply(function(x){
+  which(order(prediction[x,],decreasing = T) %in% as.numeric(as.character(results$y$vl[x])))
+  },1:nrow(results$X$vl))
 
-plot_day_ahead_load_curve_prediction(df_to_predict = df_pr, 
+plot_day_ahead_load_curve_prediction(df_to_predict = X, 
                                      prediction = prediction,
-                                     prediction_v = mapply(function(x){which.max(prediction[x,])},1:nrow(prediction)),
-                                     model="XGBoost",classification = NULL, validation=vl)
-
-
-
-
-
-
-
-
-
-
-
-
-# 
-x_data = model.matrix(as.formula(paste0(y,"~0+",paste(x,collapse="+"))),df_pr)
-
-x_data_t <- x_data[tr,]
-x_data_v <- x_data[vl,]
-
-y_labels <- as.factor(df_pr$s)
-levels(y_labels)<-sprintf("%02i",as.numeric(levels(y_labels))-1)
-y_labels <- as.numeric(as.character(y_labels))
-y_labels_t <- y_labels[tr]
-y_labels_v <- y_labels[vl]
-
-dtrain <- xgb.DMatrix(data = x_data_t, label = y_labels_t)
-colnames(dtrain)
-
-
-mod <- xgboost(data = dtrain, 
-               max.depth = 7, eta = 0.03, nthread =8, 
-               nrounds=400, min_child_weight = 1, gamma=0,
-               colsample_bytree = 0.5,
-               objective = "multi:softprob",
-               eval_metric = "mlogloss",
-               #scale_pos_weight = 1,
-               num_class=length(unique(df_pr$s)))
-
-xgboost::xgb.ggplot.importance(
-  xgb.importance(feature_names =colnames(dtrain),
-                 model = mod),top_n = 25
-  )
-
-prediction0<-matrix(predict(mod,x_data_v),
-                    ncol=length(unique(df_pr$s)), byrow=T)
-colnames(prediction0)<-c(sprintf("p%02i",1:ncol(prediction0)))
-prediction_v <- df_pr$s[vl]
-prediction <- round(prediction0*100,2)
-prediction <- as.data.frame(prediction[,sort(colnames(prediction))],stringsAsFactors=F)
-prediction$position <- mapply(function(x){which(order(prediction[x,],decreasing = T) %in% as.numeric(as.character(y_labels_v[x]+1)))},1:nrow(x_data_v))
-
-plot_day_ahead_load_curve_prediction(df_to_predict = df_pr, 
-                                     prediction = prediction,
-                                     prediction_v = mapply(function(x){which.max(prediction[x,])},1:nrow(prediction)),
-                                     model="XGBoost",classification = NULL, validation=vl)
+                                     prediction_v = mapply(function(x){which.max(prediction[x,!(colnames(prediction) %in% c("position"))])},1:nrow(prediction)),
+                                     model="XGBoost", classification=NULL, validation = as.numeric(rownames(results$X$vl)))

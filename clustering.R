@@ -101,10 +101,10 @@ GaussianMixtureModel_clustering<-function(df,time_column="t",value_column="v",k=
   )
   
   for(j in unique(clustering$cluster)){
-    if(max(df_distances[df_distances$k==j,"distance"])>2*quantile(df_distances[df_distances$k==j,"distance"],0.025)){
+    if(max(df_distances[df_distances$k==j,"distance"])>2*quantile(df_distances[df_distances$k==j,"distance"],0)){
     df_distances[df_distances$k==j,"k_new"] <- ifelse(
-      (df_distances[df_distances$k==j,"distance"]>quantile(df_distances[df_distances$k==j,"distance"],0.975) |
-         df_distances[df_distances$k==j,"distance"]<quantile(df_distances[df_distances$k==j,"distance"],0.025)),
+      (df_distances[df_distances$k==j,"distance"]>quantile(df_distances[df_distances$k==j,"distance"],1) |
+         df_distances[df_distances$k==j,"distance"]<quantile(df_distances[df_distances$k==j,"distance"],0)),
       NA,
       j)
     } else {
