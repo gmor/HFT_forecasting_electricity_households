@@ -104,6 +104,10 @@ df_pr <- df_pr[complete.cases(df_pr),]
 # Define X (Input of the model)
 X<-df_pr
 
+ggsave("describeX.pdf",ggplot(reshape2::melt(X,c("d","s"))) + geom_boxplot(aes(s, as.numeric(value))) + 
+         facet_wrap(~variable,ncol=7,scales="free_y"),
+       width = 16, height = 12)
+
 # Calculate the XGBoost model
 results <- xgboost_framework(X,plots = T)
 
