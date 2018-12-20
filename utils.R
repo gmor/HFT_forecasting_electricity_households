@@ -2,6 +2,7 @@
 library(gridExtra)
 library(grid)
 library(gtable)
+library(dplyr)
 library(pastecs)
 library(mlr)
 
@@ -82,7 +83,7 @@ xgboost_framework <- function (X, plots=F){
   features <- setdiff(names(X),c("d","s"))
   # Y
   y_labels <- as.factor(X$s)
-  levels(y_labels)<-sprintf("%02i",ifelse(is.na(as.numeric(levels(y_labels)))==T,max(as.numeric(levels(y_labels)),na.rm=T),as.numeric(levels(y_labels))-1))
+  levels(y_labels)<-sprintf("%02i",ifelse(is.na(as.numeric(levels(y_labels))) == T, max(as.numeric(levels(y_labels)),na.rm=T),as.numeric(levels(y_labels))-1))
   y_labels <- as.numeric(as.character(y_labels))
   y_labels_t <- y_labels[tr]
   y_labels_v <- y_labels[vl]
@@ -117,7 +118,8 @@ xgboost_framework <- function (X, plots=F){
                           makeNumericParam("alpha",lower = 0.7,upper = 1),
                           makeNumericParam("eta",lower = 0.01,upper = 0.3) )
   rdesc <- makeResampleDesc("CV",iters=5L)
-  ctrl <- makeTuneControlRandom(maxit = 100L)
+  ctrl <- makeTuneControlRandom(maxit = 8L)
+  if (.Platform$OS.type=="windows") parallelStartSocket(parallel::detectCores())
   mytune <- tuneParams(learner = lrn, task = traintask, resampling = rdesc, measures = logloss, 
                        par.set = params, control = ctrl, show.info = F)
   param <- append(param, mytune$x)
@@ -131,13 +133,13 @@ xgboost_framework <- function (X, plots=F){
     plot(xgb_cv_1$evaluation_log$train_mlogloss_mean,type="l",ylab="logloss",main="XGboost -- Training (Black) vs. Validation (Red) logloss")
     lines(xgb_cv_1$evaluation_log$test_mlogloss_mean,col=2)
   }
-  features <- setdiff(names(new_data),c("value",columns_to_delete,"daypart","season"))
-  pred <- exp(as.data.frame(predict(mod, newdata = as.data.frame(tonumeric_transformation(new_data[features]))))$response)
   
   lrn = setHyperPars(lrn, par.vals = param)
   mod = train(lrn, task = traintask)
   
-  return(mod)
+  return(list("mod"=mod, "params"=params, 
+              "X"=list("tr"=x_t, "vl"=x_v),
+              "y"=list("tr"=y_labels_t, "vl"=y_labels_v)))
 }
 
 detect_days_with_no_usage <- function(df, value_column, time_column, plot_density=T,tz="UTC"){
