@@ -1,6 +1,6 @@
 {
-  "api_darksky": "861fe2c5c052c028a60a834ab6ab324d",
-  "api_cams": ["gerardmor@gmail.com","gmor@cimne.upc.edu"],
-  "venv_path": "/home/gerard/.virtualenvs/beeMeteo/",
+  "api_darksky": "ec1af9d1080847a365e6ac6cbb6d02ed",
+  "api_cams": ["sally.koehler@hft-stuttgart.de","marcus.brennenstuhl@hft-stuttgart.de"],
+  "venv_path": "C://Users//skoehler//Envs//beeMeteo",
   "latex_font": false
 }

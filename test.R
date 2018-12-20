@@ -7,6 +7,7 @@ library(xgboost)
 library(Ckmeans.1d.dp)
 library(oce)
 library(jsonlite)
+library (parallelMap)
 source("clustering.R")
 source("meteo.R")
 source("utils.R")
@@ -104,19 +105,21 @@ df_pr <- df_pr[complete.cases(df_pr),]
 X<-df_pr
 
 # Calculate the XGBoost model
-mod <- xgboost_framework(X,plots = T)
+results <- xgboost_framework(X,plots = T)
 
+mod <- results$mod
+results$params
 
-features <- colnames(x_v)
-pred <- as.data.frame(predict(mod, newdata = x_v ))$response
+features <- colnames(results$X$vl)
+prediction <- predict(mod, newdata = as.data.frame(results$X$vl))
 
-prediction0<-matrix(predict(mod,x_v),
+prediction0<-matrix(prediction,
                     ncol=length(unique(X$s)), byrow=T)
 colnames(prediction0)<-c(sprintf("p%02i",1:ncol(prediction0)))
 prediction_v <- df_pr$s[vl]
 prediction <- round(prediction0*100,2)
 prediction <- as.data.frame(prediction[,sort(colnames(prediction))],stringsAsFactors=F)
-prediction$position <- mapply(function(x){which(order(prediction[x,],decreasing = T) %in% as.numeric(as.character(y_labels_v[x]+1)))},1:nrow(x_data_v))
+prediction$position <- mapply(function(x){which(order(prediction[x,],decreasing = T) %in% as.numeric(as.character(s_v[x]+1)))},1:nrow(x_data_v))
 
 plot_day_ahead_load_curve_prediction(df_to_predict = df_pr, 
                                      prediction = prediction,
